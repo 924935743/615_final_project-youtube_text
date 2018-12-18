@@ -1,0 +1,463 @@
+---
+title: "Youtube Trending Videos Analysis Report"
+output:
+  word_document: default
+  pdf_document: default
+name: Yifeng Luo
+---
+#Introduction 
+
+Most of us have been ever watched videos in YouTube (the world-famous video sharing website), which maintains a list of the top trending videos on the platform. When people do not know what video they want to watch, they could look through the trending tab to watch the current hot videos and know what is happening in the rest of the world. Trending aims to surface videos that a wide range of viewers will appreciate, so YouTube users always can find the videos they interested in from the trending list. Some trends are predictable, like a new song from a current popular artist or a new movie trailer. Others are surprising, like a viral video. The list of trending videos is updated roughly every 15 minutes. According to Variety magazine, “To determine the trending videos, YouTube considers a combination of factors including videos category, increment of views, tags and description,etc. YouTube trending system selects videos from massive videos based on a mature algorithm and specific criteria to predict a video will popular or not in the following days, then recommend them with users in trending tab. Therefore, this report will analyse and compare the features of trending video from four countries-United States, United Kingdom, Canada, India to see whether exist selection perference and what kind of video is easier to be popular among countries. 
+
+
+```{r setup, include=FALSE}
+#set chunk option and load packages
+knitr::opts_chunk$set(echo = FALSE)
+pacman::p_load(
+  "tidyverse",
+  "data.table",
+  "gridExtra",
+  "sentimentr",
+  "DT",
+  "plotly",
+  "readr",
+  "jsonlite",
+  "magrittr",
+  "benford.analysis",
+  "udpipe",
+  "wordcloud",
+  "shiny",
+  "lubridate",
+  "ggimage",
+  "lattice",
+  "tidytext",
+  "corrplot")
+```
+
+#Data Resource
+
+This dataset this research used is a daily record of the top trending YouTube videos from 11/14/2017 to 06/14/2018 in US, UK, Canada and India. It was downloaded from Kaggle. Some people scraped the data by YouTube's API and shared them in Kaggle. The dataset records the number of views, tags and description of trending videos in YouTube. Meanwhile, it includes other video information as well, like its title, category and trending date and publish date. There are many videos in trending list more than 1 day, but the data were collected daily, so it was multiple recorded. This research only keep the first day record, because the other video related information are same except the number of view, like and dislike change by time. Meanwhile, extracting some useful variables from the original dataset, such as the number of time gap between upload date and trending date and sentiment score of video description is an important step. 
+
+```{r,include=FALSE}
+#setwd("/Users/yifeng/Desktop/615_final project")
+## read trending video data & category list for U.S.
+us<-read_csv("USvideos.csv") 
+us$country<-"US"
+
+## clean outliers
+us %<>% filter(comments_disabled=="False" & ratings_disabled=="False" & video_error_or_removed=="False")
+
+#check NA 
+sapply(us, function(x) sum(is.na(x)))
+#547 discription -->NA 
+
+#read reference of video category
+us_refer<-data.frame(fromJSON(txt = "US_category_id.json",simplifyDataFrame = TRUE))
+us_refer<-as.data.frame(cbind(us_refer$items.id,us_refer$items.snippet$title))
+colnames(us_refer)<-c("category_id","category")
+
+#change categoryID format
+us_refer$category_id<-as.character(us_refer$category_id)
+us_refer$category_id<-as.numeric(us_refer$category_id)
+
+#join by ID
+us<-left_join(us,us_refer,by="category_id")
+```
+
+
+```{r,include=FALSE}
+## read Canadian data & category list
+ca1<-read_csv("ca1.csv")
+ca2<-read_csv("ca2.csv")
+ca<-rbind(ca1,ca2)
+ca$country<-"CA"
+
+#clean outliers
+ca %<>% filter(comments_disabled=="False" & ratings_disabled=="False" & video_error_or_removed=="False")
+
+#check NA
+sapply(ca, function(x) sum(is.na(x)))
+#1271 discription -->NA 
+
+#read reference of video category
+ca_refer<-data.frame(fromJSON(txt = "CA_category_id.json",simplifyDataFrame = TRUE))
+ca_refer<-as.data.frame(cbind(ca_refer$items.id,ca_refer$items.snippet$title))
+colnames(ca_refer)<-c("category_id","category")
+
+#change categoryID format
+ca_refer$category_id<-as.character(ca_refer$category_id)
+ca_refer$category_id<-as.numeric(ca_refer$category_id)
+
+#join by ID
+ca<-left_join(ca,us_refer,by="category_id")
+
+```
+
+```{r,include=FALSE}
+## read British data & category list
+gb<-read_csv("GBvideos.csv")
+gb$country<-"GB"
+
+#clean outliers
+gb %<>% filter(comments_disabled=="False" & ratings_disabled=="False" & video_error_or_removed=="False")
+
+#check NA
+sapply(gb, function(x) sum(is.na(x)))
+#589 discription -->NA 
+
+#read reference of video category
+gb_refer<-data.frame(fromJSON(txt = "GB_category_id.json",simplifyDataFrame = TRUE))
+gb_refer<-as.data.frame(cbind(gb_refer$items.id,gb_refer$items.snippet$title))
+colnames(gb_refer)<-c("category_id","category")
+
+#change categoryID format
+gb_refer$category_id<-as.character(gb_refer$category_id)
+gb_refer$category_id<-as.numeric(gb_refer$category_id)
+
+#join by ID
+gb<-left_join(gb,us_refer,by="category_id")
+
+```
+
+```{r,include=FALSE}
+## read india data & category list
+ind<-read_csv("INvideos.csv")
+ind$country<-"IN"
+
+#clean outliers
+#TRUE/FALSE is logical language
+ind %<>% filter(comments_disabled==FALSE & ratings_disabled==FALSE & video_error_or_removed==FALSE)
+
+#check NA
+sapply(ind, function(x) sum(is.na(x)))
+#528 discription -->NA 
+
+#read reference of video category
+ind_refer<-data.frame(fromJSON(txt = "IN_category_id.json",simplifyDataFrame = TRUE))
+ind_refer<-as.data.frame(cbind(ind_refer$items.id,ind_refer$items.snippet$title))
+colnames(ind_refer)<-c("category_id","category")
+
+#change categoryID format
+ind_refer$category_id<-as.character(ind_refer$category_id)
+ind_refer$category_id<-as.numeric(ind_refer$category_id)
+
+#join by ID
+ind<-left_join(ind,us_refer,by="category_id")
+```
+
+```{r,include=FALSE}
+#merge the dataset of 4 coutries as a big one
+countries<-rbind(us,gb,ca,ind)
+
+#change the data format 
+#and calculate difference days from upload date to trending date
+countries$trending_date<-ydm(countries$trending_date)
+countries$publish_time<-ymd(substr(countries$publish_time,1,10))
+countries$dif_days <- countries$trending_date-countries$publish_time
+
+#only analyse the trending data on the frist day for each video 
+countries_first<- countries %>% group_by(country,video_id) %>% filter(views==head(views,1)) %>% distinct() %>% select(-c(category_id,publish_time,comments_disabled,ratings_disabled,video_error_or_removed))
+
+#check NA
+sapply(countries_first, function(x)sum(is.na(x)))
+#1392 description NA
+```
+#Benford's Law Analysis for Views
+
+First-digit's law:
+$Prob(D_{1}=d)=log_{10}(1+\frac{1}{d})$ 
+Generalize,
+$Prob(D_{1}=d_{1},D_{2}=d_{2},...,D_{m}=d_{m})=log_{10}\left (1+\left  (\sum_{j=1}^{m}10^{m-j}d_{j} \right) ^{-1}\right)$
+```{r}
+country_benford<-benford(countries_first$views,number.of.digits = 2)
+plot(country_benford)
+country_benford
+```
+
+The original video views is in black and the expected frequency according to Benford's law is in red in the first plot. This plot shows the difference between original data and expected data. Several first two digits occurred more frequently than expected under the Benford distribution (43,12,20,16,23) as shown in the spikes. Of these, 43 is the most anomalous occurrence. 
+
+This result can be verified by Chi-squared difference test. The calculated Chi-squared statistic here is 132.09 and the p-value of the test is 0.00207, which indicate that there is sufficient evidence to reject the null hypothesis of conformity to Benford's law.
+```{r}
+reduce_country<-countries_first %>% ungroup()%>% select(video_id,views) %>% distinct()
+dim(reduce_country)
+dim(countries_first)
+```
+
+This result probably is caused by joining 4 countries' data as one big dataset. Some videos were shared and popular in several countries, so their views are total views not for individual country. As a result, there are more 3000 rows are repeated in the dataset except the country is different.
+```{r}
+country_benford2<-benford(reduce_country$views,number.of.digits = 2)
+plot(country_benford2)
+chisq(country_benford2)
+```
+
+The chi-square result shows the clean data is more fit with Benford distribution than before, which indicate that there is not sufficient evidence to reject the null hypothsis of conformity to Benford's law and varify the data could be real and not be manipulated. 
+```{r}
+country_suspect<-suspectsTable(country_benford2)
+country_suspect[1:10,]
+suspect<-getSuspects(country_benford2,reduce_country,by="absolute.diff",how.many = 5)
+head(suspect,10)
+```
+
+#visualization -- exploratory data analysis 
+```{r}
+#TOP VIEWS 
+countries_first%>% arrange(-views) %>% filter(views>=38873543)%>% 
+  mutate(image = paste0('<img width="80%" height="80%" src="', thumbnail_link , '"></img>')) %>% ungroup() %>% 
+  select(image, country,category,title,views) %>% 
+  datatable(class = "nowrap hover row-border", escape = FALSE, options = list(dom = 't',scrollX = TRUE, autoWidth = TRUE))
+```
+
+This table shows the top 10 trending videos in views from Dec 2017 to Jun 2018. It is clear to see all of these videos are music video and most of these come from UK and US, which means music genre are more easier to attract viewers' attention, so their views are higher than other trending videos'. Meanwhile, viewers in US and UK are more likely to watch music MV in YouTube.
+
+```{r,include=FALSE,error=FALSE}
+rank2<-gb %>% filter(title=="Becky G, Natti Natasha - Sin Pijama (Official Video)") %>% select(views) 
+
+rank2$inc<-NA
+for (i in 1:21) { 
+  rank2$inc[i]=rank2$views[i+1]-rank2$views[i]
+}
+rank2<-na.omit(rank2)
+rank2<-rank2[-9,]
+rank2$days<-c(1:19)
+
+#summary(rank2$inc)
+rank2$plot<-"1f601"
+for (i in 1:18) {
+  if(rank2$inc[i+1]>=rank2$inc[i]){
+    rank2$plot[i+1]<-"1f601"
+  }else{
+    rank2$plot[i+1]<-"1f627"
+  }
+  
+}
+```
+
+```{r}
+ggplot(rank2)+aes(days,inc)+geom_line()+geom_emoji(aes(x=days, y=inc,image=plot), size=.05)+ggtitle("The views trend for Runner-up video by trending days")+labs(y="Views")
+```
+
+The line graph shows the movement of views increment of runner-up video during the trending period. The x-axis means the trending days and y-axis means the incremental views. If the video increment is larger than last day, the node shows a smile face and vice versa. The views increased rapidly from day 3 to day 9 and reached a pick in day 8. 
+
+```{r}
+corrplot.mixed(corr = cor(countries_first[,c("views","likes","dislikes","comment_count")]))
+```
+
+From the correlation plot, it is clear to notice that the amount of view, like, dislike and comment are highly correlated. 
+
+```{r}
+#category
+countries_first %>% group_by(country,category) %>% mutate(n=1) %>% mutate(N=sum(n)) %>% 
+ggplot()+aes(reorder(category,-N),fill=factor(category))+geom_bar(show.legend = F)+facet_grid(country~.,scales = "free_y")+theme(axis.text.x = element_text(angle = 15))+labs(x=NULL,y="Frequency")+ggtitle("The Frequency of Video Category in 4 Countries")
+```
+
+This plot shows the difference of video category among trending videos by each country. Overall, the entertainment video has the highest frequency. The music videos are more popular in US and UK, especially in UK. On the contrary, the frequency of news and politics video in UK is lower than other three countries. A thing should be noticed is the science and technology and endcation videos get more attention than other three countries. On the other hand, the sport videos are not popular in India. 
+```{r}
+#time difference
+countries_first %>% filter(dif_days<16) %>% 
+ggplot()+aes(factor(dif_days),fill=factor(dif_days))+geom_bar(show.legend = F)+facet_wrap(country~.,scales = "free_y")+labs(x=NULL,y="Frequency")+ggtitle("The Frequency of Time Gap between Video Upload and Trending")
+```
+
+This plot shows the distrbution of time gab between video upload date and trending start date. Overall, it seems that the videos never trend in the same day it is published and most of video will trend between 1 to 3 days after uploading. 
+
+
+```{r}
+#top channel
+countries_first %>% group_by(channel_title) %>% transmute(n=1,N=sum(n)) %>% arrange(-N) %>% distinct(channel_title,N) %>% filter(N>190) %>% ggplot()+aes(reorder(channel_title,N),N,fill=channel_title)+geom_bar(stat = "identity")+geom_label(aes(label=N))+guides(fill="none")+theme(axis.text.x = element_text(hjust = 1))+ labs(title=" Top 10 trending channels in 4 countries")+xlab(NULL)+ylab(NULL)+coord_flip()
+```
+
+The bar chart shows the top 10 trending channels among US, UK, CA and IN. Most of them are TV channel and talk show (EllenShow, Fallon show and Kimmel show).
+
+
+Now, this report will use wordcould to analyse the tags attached in trending videos to find features of tags and differences between countries.
+```{r,warning=FALSE,error=FALSE}
+#tag-us
+us_tag<-countries_first %>% ungroup() %>% filter(country=="US") %>% select(tags)
+us_tag_split<-data.frame(tstrsplit(us_tag$tags, '\"|\"',fill = NA,fix=TRUE))
+colnames(us_tag_split)<-c(1:69)
+us_tag_split<- as.data.frame(t(us_tag_split))
+us_tag_split %<>% gather(video,tags,V1:V6238,na.rm = TRUE) 
+us_tag_split$tags<-tolower(us_tag_split$tags) 
+us_tag_split %>% group_by(tags) %>% count() %>% arrange(-n) %>% filter(n>100) %>% with(wordcloud(tags,n,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+Here is the wordcould about the top 100 frequent tags in US trending videos. The highest frequency words are "funny" and "comedy". Meanwhile, it shows some interesting tags, like "nba","basketball","food", "pop" and "science". These tags are highly relevant to American life.
+```{r}
+#tag-CA
+ ca_tag<-countries_first %>% ungroup() %>% filter(country=="CA") %>% select(tags)
+ ca_tag_split<-data.frame(tstrsplit( ca_tag$tags, '\"|\"',fill = NA,fix=TRUE))
+colnames( ca_tag_split)<-c(1:123)
+ ca_tag_split<- as.data.frame(t(ca_tag_split))
+ ca_tag_split %<>% gather(video,tags,V1:V23900,na.rm = TRUE) 
+ ca_tag_split$tags<-tolower(ca_tag_split$tags) 
+ ca_tag_split %>% group_by(tags) %>% count() %>% arrange(-n) %>% filter(n>250) %>% with(wordcloud(tags,n,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+Here is the wordcould about the top 250 frequent tags in CA trending videos. The highest frequency words are similar with US. However,
+"[none]" means videos did not attach any tags. According to the wordcould, this kind of video is relative common. Meanwhile, it shows some interesting tags, like "donald trump","trump","politics" and "hollywood". It seems Canadian are more care about US's policts and Trump's remark than American.
+```{r}
+#tag-IN
+in_tag<-countries_first %>% ungroup() %>% filter(country=="IN") %>% select(tags)
+in_tag_split<-data.frame(tstrsplit(in_tag$tags, '\"|\"',fill = NA,fix=TRUE))
+colnames(in_tag_split)<-c(1:71)
+in_tag_split<- as.data.frame(t(in_tag_split))
+in_tag_split %<>% gather(video,tags,V1:V15716,na.rm = TRUE) %>% mutate(tags = str_replace_all(tags,'"',""))
+in_tag_split$tags<-tolower(in_tag_split$tags) 
+in_tag_split %>% group_by(tags) %>% count() %>% arrange(-n) %>% mutate(N=n-300)%>%  filter(N>0) %>% with(wordcloud(tags,N,colors = brewer.pal(6,"Dark2"),random.order = F))
+
+```
+
+Here is the wordcould about the top 300 frequent tags in In trending videos. "full episode","television","comedy","funny","show" and "serial" usually were attached for each video. Meanwhile, there are some highly relevant tags with India, like "bollywood","hindi" and "zee5".
+```{r}
+#tag-gb
+gb_tag<-countries_first %>% ungroup() %>% filter(country=="GB") %>% select(tags)
+gb_tag_split<-data.frame(tstrsplit(gb_tag$tags, '\"|\"',fill = NA,fix=TRUE))
+colnames(gb_tag_split)<-c(1:78)
+gb_tag_split<- as.data.frame(t(gb_tag_split))
+gb_tag_split %<>% gather(video,tags,V1:V3216,na.rm = TRUE)
+gb_tag_split$tags<-tolower(gb_tag_split$tags) 
+gb_tag_split %>% group_by(tags) %>% count() %>% arrange(-n) %>% filter(n>60) %>% with(wordcloud(tags,n,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+Here is the wordcould about the top 60 frequent tags in UK trending videos. Except "music" and "funny", "music" is a highly frequency tag, which corresponse with above analysis result, British really like to watch music video in YouTube. Moreover, there are some music-related tags, like "rap","pop","trailer" and "hip pop". 
+
+
+In this part, this report will do text mining and sentiment analysis of video description. In the text mining part, this research applied RAKE algorithm to extract noun phrases in the description. RAKE short for Rapid Automatic Keyword Extraction algorithm, is a domain independent keyword extraction algorithm which tries to determine key phrases in a body of text by analyzing the frequency of word appearance and its co-occurrence with other words in the text. In the sentiment analysis part, this research applied "bing" lexicon to get frequency of positive and negative words and used "sentimentr" package to claculate the sentiment score for each video description.
+
+```{r,include=FALSE}
+if (file.exists("english-ud-2.0-170801.udpipe")) 
+  ud_model <- udpipe_load_model(file = "english-ud-2.0-170801.udpipe") else {
+    ud_model <- udpipe_download_model(language = "english")
+    ud_model <- udpipe_load_model(ud_model$file_model)
+}
+```
+
+```{r}
+us_desc<-countries_first %>% ungroup() %>%  filter(country=="US") %>% select(description) 
+us_udpipe <- udpipe_annotate(ud_model, us_desc$description)
+us_udpipe<-data.frame(us_udpipe)
+```
+
+
+```{r,warning=FALSE,error=FALSE}
+us_udpipe$phrase_tag <- as_phrasemachine(us_udpipe$upos, type = "upos")
+
+stats_us <- keywords_phrases(x = us_udpipe$phrase_tag, term = tolower(us_udpipe$token), 
+                          pattern = "(A|N)*N(P+D*(A|N)*N)*", 
+                          is_regex = TRUE, detailed = FALSE)
+
+
+stats_us <- subset(stats_us, ngram > 1 & freq > 3)
+stats_us$key <- factor(stats_us$keyword, levels = rev(stats_us$keyword))
+barchart(key ~ freq, data = head(stats_us, 20), col = "magenta", 
+         main = "Keywords - simple noun phrases", xlab = "Frequency")
+
+stats_us %>% top_n(100) %>% with(wordcloud(key,freq,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+From the wordcould, it is clear to see Jimmy Kilmmel and Jimmy Fallon are really popular in US. Most of trending video mentioned "jimmy follon" and "jimmy kimmel" in their description. Meanwhile, "warner chappell","production music" and "music video", these knid of music related phrases usually were mention in description. (Note: Warnner Chappell is a music production company.)
+
+```{r}
+ca_desc<-countries_first %>% ungroup() %>%  filter(country=="CA") %>% select(description) 
+ca_udpipe <- udpipe_annotate(ud_model, ca_desc$description)
+ca_udpipe<-data.frame(ca_udpipe)
+```
+
+
+```{r,warning=FALSE,error=FALSE}
+ca_udpipe$phrase_tag <- as_phrasemachine(ca_udpipe$upos, type = "upos")
+stats_ca <- keywords_phrases(x = ca_udpipe$phrase_tag, term = tolower(ca_udpipe$token), 
+                          pattern = "(A|N)*N(P+D*(A|N)*N)*", 
+                          is_regex = TRUE, detailed = FALSE)
+stats_ca <- subset(stats_ca, ngram > 1 & freq > 3)
+stats_ca$key <- factor(stats_ca$keyword, levels = rev(stats_ca$keyword))
+barchart(key ~ freq, data = head(stats_ca, 20), col = "magenta", 
+         main = "Keywords - simple noun phrases", xlab = "Frequency")
+stats_ca %>% top_n(100) %>% with(wordcloud(key,freq,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+The wordcould shows the highly frequency noun phrases in description of Canadian trending video. A little difference with US is "Jimmy Fallon" are not shown in the wordcould, which means Kimmel Talk Show is more popular in CA. Meanwhile, there are some languages from other country in the wordcould which means many inter-culture videos were trend in CA.
+
+```{r}
+gb_desc<-countries_first %>% ungroup() %>%  filter(country=="GB") %>% select(description) 
+gb_udpipe <- udpipe_annotate(ud_model, gb_desc$description)
+gb_udpipe<-data.frame(gb_udpipe)
+```
+
+```{r,warning=FALSE,error=FALSE}
+gb_udpipe$phrase_tag <- as_phrasemachine(gb_udpipe$upos, type = "upos")
+stats_gb <- keywords_phrases(x = gb_udpipe$phrase_tag, term = tolower(gb_udpipe$token), 
+                          pattern = "(A|N)*N(P+D*(A|N)*N)*", 
+                          is_regex = TRUE, detailed = FALSE)
+stats_gb <- subset(stats_gb, ngram > 1 & freq > 3)
+stats_gb$key <- factor(stats_gb$keyword, levels = rev(stats_gb$keyword))
+barchart(key ~ freq, data = head(stats_gb, 20), col = "magenta", 
+         main = "Keywords - simple noun phrases", xlab = "Frequency")
+stats_gb %>% top_n(100) %>% with(wordcloud(key,freq,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+Again, "jimmy kimmel" is the most frequent phrase in description. Meanwhile, some interesting phrases were mentioned, such as, "star wars","tmz sparts","american idol" and "katy perry". On the other side, video creators always mentioned other social medias in the video desciption to attract followers, like "instagram","tweets",and "facebook".
+
+```{r}
+in_desc<-countries_first %>% ungroup() %>%  filter(country=="IN") %>% select(description) 
+in_udpipe <- udpipe_annotate(ud_model, in_desc$description)
+in_udpipe<-data.frame(in_udpipe)
+```
+
+```{r,warning=FALSE,error=FALSE}
+in_udpipe$phrase_tag <- as_phrasemachine(in_udpipe$upos, type = "upos")
+stats_in <- keywords_phrases(x = in_udpipe$phrase_tag, term = tolower(in_udpipe$token), 
+                          pattern = "(A|N)*N(P+D*(A|N)*N)*", 
+                          is_regex = TRUE, detailed = FALSE)
+stats_in <- subset(stats_in, ngram > 1 & freq > 3)
+stats_in$key <- factor(stats_in$keyword, levels = rev(stats_in$keyword))
+barchart(key ~ freq, data = head(stats_in, 20), col = "magenta", 
+         main = "Keywords - simple noun phrases", xlab = "Frequency")
+stats_in %>% top_n(100) %>% with(wordcloud(key,freq,colors = brewer.pal(6,"Dark2"),random.order = F))
+```
+
+Indian trending video description always mentioned "current affairs","full epidode". Therefore, current affairs and drama are easier to attract people's attention in India to some extent.
+
+```{r,warning=FALSE,error=FALSE}
+#sentiment anlysis
+
+#sentiment anlysis
+countries_first %>% ungroup() %>% select(country,description) %>% unnest_tokens(word,description) %>%  mutate(word = str_extract(word, "[a-z']+")) %>% anti_join(stop_words) %>% inner_join(get_sentiments("bing")) %>% ggplot()+aes(sentiment,fill=sentiment)+geom_bar()+facet_wrap(country~.,scales = "free_y")+ggtitle("Negative vs. Positive")
+
+sentiment_desc<-countries_first %>% ungroup() %>% select(country,description) %>% unnest_tokens(word,description) %>%  mutate(word = str_extract(word, "[a-z']+")) %>% anti_join(stop_words) %>% inner_join(get_sentiments("bing")) %>% group_by(country,sentiment) %>% count() %>%  ggplot()+aes(country,n)+geom_bar(aes(fill=sentiment),stat = "identity",position = "dodge")+ggtitle("Negative vs. Positive")
+ggplotly(sentiment_desc)
+```
+This bar chart shows the frequency of negative and positive word in video description among 4 countries. It is clear to see the positive word has a higher frequency than negative word. A good video should share a positive thought and attitude.
+
+
+
+```{r}
+#sentiment score 
+#us
+us_desc %<>% filter(!is.na(description))
+us_desc <-sentiment(us_desc$description) 
+us_desc$country<-"US"
+#ca
+ca_desc %<>% filter(!is.na(description))
+ca_desc<-sentiment(ca_desc$description)
+ca_desc$country<-"CA"
+#in
+in_desc %<>% filter(!is.na(description))
+in_desc<-sentiment(in_desc$description)
+in_desc$country<-"IN"
+#gb
+gb_desc %<>% filter(!is.na(description))
+gb_desc<-sentiment(gb_desc$description)
+gb_desc$country<-"GB"
+#facet
+sentiment_score<-rbind(us_desc,ca_desc,in_desc,gb_desc)
+sentiment_score %>% group_by(country,element_id) %>% mutate(sentiment=sum(sentiment)) %>% select(country,element_id,sentiment) %>% distinct() %>% ggplot()+aes(sentiment,fill="red")+geom_histogram(show.legend = F,bins = 40)+facet_wrap(country~.,scales = "free_y")+ggtitle("The Distribution of Description Score in these 4 Countries")+geom_vline(xintercept = 0, color = "black", size = 1, alpha = 0.6, linetype = "longdash") +coord_cartesian(xlim = c(-3, 7))
+#sentiment_score %>% group_by(country,element_id) %>% mutate(sentiment=sum(sentiment)) %>% select(country,element_id,sentiment) %>% distinct() %>% ggplot()+aes(sentiment,color=factor(country))+geom_density()+geom_vline(xintercept = 0, color = "black", size = 1, alpha = 0.6, linetype = "longdash")
+```
+
+The distribution of sentiment score of description in these 4 countries indicates, the most of sentiment score of description are higher than 0, which means the description is positive in overall.
+
+
+#Acknowledge 
+
+The data could not have been created without the hard work of the person who grasped the data from YouTube. They actually did a lot of work of collecting all the necessary metrics of the video records. And thanks to the everyone who shared their great ideas and EDA process in Kaggle, which inspires this study to dig in deeper. 
+
