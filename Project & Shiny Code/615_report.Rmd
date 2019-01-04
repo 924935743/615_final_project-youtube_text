@@ -345,7 +345,7 @@ Here is the wordcould about the top 60 frequent tags in UK trending videos. Exce
 
 In this part, this report will explain the text mining and sentiment analysis of video description. In the text mining part, this research applied RAKE algorithm to extract noun phrases from the description. RAKE short for Rapid Automatic Keyword Extraction algorithm, is a domain independent keyword extraction algorithm which tries to determine key phrases in a body of text by analyzing the frequency of word appearance and its co-occurrence with other words in the text. In the sentiment analysis part, this research applied “bing” lexicon to get the frequency of positive and negative words and used “sentimentr” package to claculate the sentiment score for each video description.
 
-Please NOTE in this part, I used "udpipe" package to extract key words and phrases of description based on the logic of natural language. The drawback is the pace is SLOW when reviewers want to run the code.I am sorry to take your too much time.
+Please NOTE in this part, I used "udpipe" package to extract key words and phrases of description based on the logic of natural language. The drawback is the pace is SLOW when reviewers want to run the code.I am sorry to take up too much of your time.
 
 ```{r,include=FALSE}
 if (file.exists("english-ud-2.0-170801.udpipe")) 
