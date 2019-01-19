@@ -18,12 +18,12 @@ ui<- fluidPage(
       hr(),
       sliderInput("freq",
                   "Minimum Frequency:",
-                  min = 100,  max = 2200, value = 100),
-      sliderInput("max",
-                  "Maximum Number of Words:",
-                  min = 1,  max = 300,  value = 100)
+                  min = 100,  max = 1000, value = c(100,200)),
+      sliderInput("max","Number of Word:",
+                  2,300,2,step=5,
+                  animate = animationOptions(interval=1000,loop=T))
     ),
-    
+
     # Show Word Cloud
     mainPanel(
       plotOutput("plot")
