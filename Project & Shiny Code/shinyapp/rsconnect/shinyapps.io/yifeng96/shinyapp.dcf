@@ -1,0 +1,10 @@
+name: shinyapp
+title:
+username:
+account: yifeng96
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 655970
+bundleId: 1824609
+url: https://yifeng96.shinyapps.io/shinyapp/
+when: 1547939123.6725
